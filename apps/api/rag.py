@@ -1,0 +1,101 @@
+import os
+
+from groq import Groq
+
+from embeddings import embed_texts, get_collection
+
+TOP_K = 6
+GROQ_MODEL = "llama-3.3-70b-versatile"
+MAX_TOKENS = 1024
+
+_groq_client: Groq | None = None
+
+
+def _get_groq() -> Groq:
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    return _groq_client
+
+
+SYSTEM_PROMPT = """You are an expert at explaining code repositories in a chat interface.
+Answer the user's question using ONLY the provided repository excerpts.
+
+Rules:
+- Cite file paths inline like (src/foo.ts) when you reference them.
+- If the excerpts don't contain enough information, say so clearly instead of guessing.
+- Be concrete and concise. Prefer code references over generic prose.
+
+Formatting (this is rendered as chat markdown, not a document):
+- NEVER use # H1 headings. Skip them entirely.
+- Use ## H2 headings only when the answer is genuinely multi-section (3+ distinct parts). Otherwise use plain paragraphs.
+- Prefer **bold** for emphasis over headings.
+- Aim for ~150-250 words. Expand only when the question genuinely requires more depth."""
+
+
+def retrieve(user_id: str, repo_id: str, question: str, k: int = TOP_K) -> list[dict]:
+    """Return the top-k chunks most semantically similar to the question."""
+    query_vector = embed_texts([question])[0]
+
+    collection = get_collection()
+    results = collection.query(
+        query_embeddings=[query_vector],
+        n_results=k,
+        where={
+            "$and": [
+                {"user_id": {"$eq": user_id}},
+                {"repo_id": {"$eq": repo_id}},
+            ]
+        },
+    )
+
+    ids = results["ids"][0]
+    documents = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    distances = results["distances"][0]
+
+    return [
+        {
+            "id": ids[i],
+            "text": documents[i],
+            "metadata": metadatas[i],
+            "distance": distances[i],
+        }
+        for i in range(len(ids))
+    ]
+
+
+def _build_user_message(question: str, chunks: list[dict]) -> str:
+    excerpts = "\n\n".join(
+        f"--- {c['metadata']['path']} (chunk {c['metadata']['chunk_index']}) ---\n{c['text']}"
+        for c in chunks
+    )
+    return f"Repository excerpts:\n\n{excerpts}\n\n---\n\nQuestion: {question}"
+
+
+def ask(user_id: str, repo_id: str, question: str) -> dict:
+    """Run the full RAG pipeline: retrieve, prompt, generate. Returns answer + sources."""
+    chunks = retrieve(user_id, repo_id, question)
+
+    client = _get_groq()
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        max_tokens=MAX_TOKENS,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _build_user_message(question, chunks)},
+        ],
+    )
+
+    answer = response.choices[0].message.content or ""
+    return {
+        "answer": answer,
+        "sources": [
+            {
+                "path": c["metadata"]["path"],
+                "chunk_index": c["metadata"]["chunk_index"],
+                "distance": round(c["distance"], 3),
+            }
+            for c in chunks
+        ],
+    }
