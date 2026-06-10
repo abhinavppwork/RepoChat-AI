@@ -1,143 +1,178 @@
 # RepoChat AI
 
-> AI that reads any GitHub repo so you don't have to.
+AI that reads GitHub repositories and answers questions about the codebase with source-backed responses.
 
-Paste a public GitHub repository, ask anything, get an answer with citations to the actual source files.
+## Overview
 
-![Screenshot placeholder - replace with apps/web/public/screenshot.png](apps/web/public/image.png)
+RepoChat AI is a full-stack RAG application for understanding public GitHub repositories faster.
 
-▶ **[Watch the 2-minute demo](https://youtu.be/kSgZSqH6iXk)**
+You paste a repository URL, the backend fetches and filters relevant files, chunks them, generates embeddings, stores them in ChromaDB, and answers questions using retrieved repository context. The app is protected with Firebase Authentication, and indexed data is isolated per user.
 
----
+This version of the project is maintained by **Abhinav**.
 
-## What it does
+## Features
 
-- Paste any public GitHub repository URL
-- The backend fetches relevant files, chunks them, and stores embeddings in a local vector DB
+- Index any public GitHub repository
 - Ask natural-language questions about the repo
-- Get AI-generated answers with **clickable source citations** to specific files on GitHub
+- Get answers grounded in retrieved source chunks
+- View source file citations for each response
+- Sign in with Firebase Authentication
+- Keep indexed data scoped to the signed-in user
+- Run embeddings locally with BGE and persist vectors in ChromaDB
 
-## How it works
+## Architecture
 
-```
-                   ┌────────────────────┐
-                   │  GitHub repo URL   │
-                   └─────────┬──────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  GitHub REST API     │  ← fetch tree + raw files
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  Language-aware      │  ← RecursiveCharacterTextSplitter
-                  │  chunker (LangChain) │
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  OpenAI embeddings   │  ← text-embedding-3-small
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  ChromaDB (on-disk)  │  ← stores vector + path + repo_id
-                  └──────────┬───────────┘
-                             │
-                  ─────────── ask question ───────────
-                             │
-                  ┌──────────▼───────────┐
-                  │  Retriever - top-K   │  ← nearest-neighbor on the question
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  Claude Sonnet 4.6   │  ← grounded synthesis from chunks
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  Answer + sources    │
-                  └──────────────────────┘
-```
+The project has two applications:
 
-Each chunk stores its file path and repo identifier as metadata, so the retriever can scope queries to a single repo and answers can cite specific files.
+- `apps/web` - Next.js frontend
+- `apps/api` - FastAPI backend
 
-## Tech stack
+The backend pipeline looks like this:
 
-**Frontend**
-- Next.js 16 (App Router)
-- React 19
-- Tailwind CSS v4 (+ typography plugin)
-- react-markdown + rehype-highlight
+1. Accept a GitHub repository URL
+2. Fetch the repo tree and raw file contents from the GitHub API
+3. Filter supported files and skip noisy directories
+4. Split file content into chunks with LangChain text splitters
+5. Generate embeddings with `BAAI/bge-small-en-v1.5`
+6. Store vectors plus metadata in local ChromaDB
+7. Embed the user question
+8. Retrieve the most relevant chunks for that user and repo
+9. Generate a grounded answer with Groq Llama 3.3
 
-**Backend**
-- FastAPI (Python 3.11+)
-- LangChain text splitters
-- BGE embeddings via sentence-transformers
-- ChromaDB - vector store
-- Groq Python SDK - Llama 3.3 for generation
-- GitHub REST API
-
-## Running locally
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 20+
-- A [Groq API key](https://console.groq.com/keys) (for Q&A with Llama 3.3)
-- (Optional) A [GitHub personal access token](https://github.com/settings/tokens) - bumps API rate limit from 60/hr to 5000/hr
-
-### Backend
-
-```bash
-cd apps/api
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-cp .env.example .env
-# Edit .env and add:
-#   GROQ_API_KEY=gsk_...
-#   GITHUB_TOKEN=ghp_...   (optional)
-
-uvicorn main:app --reload
-```
-
-The API serves at `http://localhost:8000`. Swagger UI at `http://localhost:8000/docs`.
-
-Embeddings are local now, using `BAAI/bge-small-en-v1.5` via `sentence-transformers`, so there is no separate embeddings API key to configure. On first run, the model may download once before indexing works.
+## Tech Stack
 
 ### Frontend
 
-```bash
-cd apps/web
-npm install
-npm run dev
+- Next.js 16
+- React 19
+- Tailwind CSS v4
+- Firebase Web SDK
+- `react-markdown`
+- `rehype-highlight`
+
+### Backend
+
+- FastAPI
+- Python 3.11+
+- LangChain text splitters
+- `sentence-transformers`
+- ChromaDB
+- Groq Python SDK
+- Firebase Admin SDK
+- GitHub REST API
+
+## Authentication
+
+The app uses Firebase Authentication on the frontend and Firebase Admin on the backend.
+
+- The frontend signs users in and sends a Firebase ID token with each protected API request
+- The backend verifies the token before indexing or answering questions
+- Indexed chunks are stored with `user_id` metadata
+- Retrieval is filtered by both `user_id` and `repo_id`
+
+This means one signed-in user cannot query another user’s indexed repository data.
+
+## Repository Structure
+
+```text
+repochat-ai/
+├── apps/
+│   ├── api/
+│   │   ├── main.py
+│   │   ├── auth.py
+│   │   ├── repo_loader.py
+│   │   ├── chunker.py
+│   │   ├── embeddings.py
+│   │   ├── rag.py
+│   │   ├── requirements.txt
+│   │   └── .env.example
+│   └── web/
+│       ├── app/
+│       ├── lib/
+│       ├── public/
+│       ├── package.json
+│       └── .env
+└── data/
+    └── chroma/
 ```
 
-Open `http://localhost:3000`.
+## Backend Modules
 
-## API
+- `main.py` - FastAPI app, routes, request models, CORS
+- `auth.py` - Firebase token verification
+- `repo_loader.py` - GitHub repo parsing, tree fetch, file filtering, raw file download
+- `chunker.py` - language-aware chunking
+- `embeddings.py` - local BGE embeddings and ChromaDB storage
+- `rag.py` - retrieval and answer generation with Groq
+
+## Supported File Types
+
+The current backend indexes these file types:
+
+- `.md`
+- `.py`
+- `.ts`
+- `.tsx`
+- `.js`
+- `.jsx`
+- `.json`
+
+It also skips common noise like:
+
+- `node_modules`
+- `.git`
+- `.next`
+- `dist`
+- `build`
+- `venv`
+- `__pycache__`
+
+## API Endpoints
+
+### `GET /health`
+
+Basic health check.
 
 ### `POST /index-repo`
 
+Indexes a public GitHub repository for the authenticated user.
+
+Request:
+
 ```json
-{ "repo_url": "https://github.com/owner/repo" }
+{
+  "repo_url": "https://github.com/owner/repo"
+}
 ```
 
-Fetches the repo, chunks supported files (`.md`, `.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.json`), and stores embeddings.
+Response:
 
 ```json
-{ "repo_id": "owner/repo", "file_count": 47, "chunk_count": 148 }
+{
+  "repo_id": "owner/repo",
+  "file_count": 47,
+  "chunk_count": 148
+}
 ```
 
 ### `POST /ask`
 
-```json
-{ "repo_id": "owner/repo", "question": "How does authentication work?" }
-```
+Answers a question about an indexed repository for the authenticated user.
 
-Returns an answer + the source chunks used to generate it:
+Request:
 
 ```json
 {
-  "answer": "Authentication uses JWT tokens issued by ... (src/auth.ts)",
+  "repo_id": "owner/repo",
+  "question": "How does authentication work?"
+}
+```
+
+Response:
+
+```json
+{
+  "answer": "Authentication is handled by ...",
   "sources": [
     { "path": "src/auth.ts", "chunk_index": 4, "distance": 0.187 },
     { "path": "src/middleware.ts", "chunk_index": 0, "distance": 0.213 }
@@ -145,39 +180,121 @@ Returns an answer + the source chunks used to generate it:
 }
 ```
 
-## Folder structure
+## Local Setup
 
+### Prerequisites
+
+- Python 3.11+
+- Node.js 20+
+- A Groq API key
+- A Firebase project with Google sign-in enabled
+- A Firebase service account key for backend verification
+- Optional GitHub personal access token for higher GitHub API limits
+
+## Environment Variables
+
+### Frontend: `apps/web/.env`
+
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
-repochat-ai/
-├── apps/
-│   ├── api/                  # FastAPI backend
-│   │   ├── main.py           # routes + CORS + Pydantic models
-│   │   ├── repo_loader.py    # GitHub URL → file list
-│   │   ├── chunker.py        # files → chunks (language-aware)
-│   │   ├── embeddings.py     # chunks → vectors → Chroma
-│   │   └── rag.py            # retrieve + prompt + Claude
-│   └── web/                  # Next.js frontend
-│       ├── app/page.tsx      # single-page chat UI
-│       └── lib/api.ts        # typed API client
-└── data/
-    └── chroma/               # local vector DB (gitignored)
+
+### Backend: `apps/api/.env`
+
+```env
+GROQ_API_KEY=...
+GITHUB_TOKEN=...
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"...","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n","client_email":"...","client_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"...","universe_domain":"googleapis.com"}
 ```
 
-## The problem
+Important:
 
-Developers spend too much time understanding unfamiliar codebases.
+- `FIREBASE_SERVICE_ACCOUNT_JSON` must be a single-line JSON string
+- the `private_key` inside it should use escaped newlines like `\\n`
+- do not commit your `.env` files
 
-RepoChat AI is an experiment in combining RAG, semantic search, code understanding, and AI-assisted developer workflows to make onboarding into repositories much faster.
+## Running Locally
 
-## Future improvements
+### 1. Start the backend
 
-- Stream the answer (Server-Sent Events) instead of waiting for the full response
-- Persist conversation history server-side
-- Line-range source links (`#L42-L78`) by carrying line numbers through chunking
-- Support large repos that exceed GitHub's tree-truncation limit
-- Distance-threshold gating so off-topic questions get a clear "I don't know" instead of low-confidence guesses
-- Per-repo collections to support clean re-indexing
+```powershell
+cd "F:\WHATSAPP BOT\repochat-ai\apps\api"
+..\..\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
 
-## Built by
+Backend runs at:
 
-**[Mahima Thacker](https://github.com/mahimathacker)** - [@mahima_thacker](https://twitter.com/mahima_thacker) on X
+- `http://localhost:8000`
+- Swagger docs: `http://localhost:8000/docs`
+
+Note:
+
+- BGE embeddings run locally
+- on first use, the model may take time to load or download
+
+### 2. Start the frontend
+
+```powershell
+cd "F:\WHATSAPP BOT\repochat-ai\apps\web"
+npm install
+npm run dev
+```
+
+Frontend runs at:
+
+- `http://localhost:3000`
+
+## How to Use
+
+1. Sign in with Google
+2. Paste a public GitHub repository URL
+3. Click `Index`
+4. Wait for indexing to complete
+5. Ask questions about the repository
+6. Open cited source links to inspect the relevant files
+
+## Notes
+
+- `data/chroma` stores the local vector database
+- you can delete `data/chroma` to reset indexed data
+- deleting it does not affect the source code
+- after deleting it, repositories must be indexed again
+
+## Current Limitations
+
+- Only public GitHub repositories are supported
+- Only a limited set of file types is indexed
+- Very large repositories may take longer to process
+- Retrieval quality depends on chunking and embedding quality
+- Answers are citation-backed by file and chunk, not exact line ranges
+- Chat history is currently in-session only
+
+## Future Improvements
+
+- Persistent chat history
+- Repo management per user
+- Delete and re-index endpoints
+- Streaming answers
+- Line-range citations
+- Better large-repo handling
+- Hybrid retrieval and reranking
+
+## Demo Assets
+
+- Add your own screenshots or a GIF later when you are ready to showcase the UI flow
+
+## Author
+
+Built and customized by **Abhinav**.
+
+## License
+
+Add your preferred license here.
