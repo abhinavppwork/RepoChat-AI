@@ -8,7 +8,6 @@ RepoChat AI is a full-stack RAG application for understanding public GitHub repo
 
 You paste a repository URL, the backend fetches and filters relevant files, chunks them, generates embeddings, stores them in ChromaDB, and answers questions using retrieved repository context. The app is protected with Firebase Authentication, and indexed data is isolated per user.
 
-This version of the project is maintained by **Abhinav**.
 
 ## Features
 
@@ -235,7 +234,7 @@ Important:
 ### 1. Start the backend
 
 ```powershell
-cd "F:\WHATSAPP BOT\repochat-ai\apps\api"
+cd "repochat-ai\apps\api"
 ..\..\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn main:app --reload
@@ -254,7 +253,7 @@ Note:
 ### 2. Start the frontend
 
 ```powershell
-cd "F:\WHATSAPP BOT\repochat-ai\apps\web"
+cd "repochat-ai\apps\web"
 npm install
 npm run dev
 ```
