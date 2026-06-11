@@ -18,6 +18,7 @@ This version of the project is maintained by **Abhinav**.
 - View source file citations for each response
 - Sign in with Firebase Authentication
 - Keep indexed data scoped to the signed-in user
+- Save and reopen chat sessions from Firestore
 - Run embeddings locally with BGE and persist vectors in ChromaDB
 
 ## Architecture
@@ -104,6 +105,7 @@ repochat-ai/
 - `chunker.py` - language-aware chunking
 - `embeddings.py` - local BGE embeddings and ChromaDB storage
 - `rag.py` - retrieval and answer generation with Groq
+- `chat-history.ts` - Firestore-backed chat sessions for each signed-in user
 
 ## Supported File Types
 
@@ -167,6 +169,15 @@ Request:
   "question": "How does authentication work?"
 }
 ```
+
+## Chat History
+
+Chat history is stored in Firestore under the signed-in user, so each account keeps its own saved repo sessions.
+
+- Indexing a repo creates a new chat session
+- Each question and answer is appended to that session
+- The UI shows a modern sidebar with recent conversations
+- Opening a past session restores the repo, messages, and source context
 
 Response:
 
@@ -260,6 +271,7 @@ Frontend runs at:
 4. Wait for indexing to complete
 5. Ask questions about the repository
 6. Open cited source links to inspect the relevant files
+7. Reopen any saved chat session from the sidebar
 
 ## Notes
 
@@ -275,11 +287,10 @@ Frontend runs at:
 - Very large repositories may take longer to process
 - Retrieval quality depends on chunking and embedding quality
 - Answers are citation-backed by file and chunk, not exact line ranges
-- Chat history is currently in-session only
+- Chat history is saved per user in Firestore, not just in memory
 
 ## Future Improvements
 
-- Persistent chat history
 - Repo management per user
 - Delete and re-index endpoints
 - Streaming answers
