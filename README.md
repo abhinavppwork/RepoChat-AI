@@ -280,14 +280,6 @@ Frontend runs at:
 - deleting it does not affect the source code
 - after deleting it, repositories must be indexed again
 
-## Current Limitations
-
-- Only public GitHub repositories are supported
-- Only a limited set of file types is indexed
-- Very large repositories may take longer to process
-- Retrieval quality depends on chunking and embedding quality
-- Answers are citation-backed by file and chunk, not exact line ranges
-- Chat history is saved per user in Firestore, not just in memory
 
 ## Future Improvements
 
